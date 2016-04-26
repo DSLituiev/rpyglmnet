@@ -2,7 +2,7 @@ import sys
 import logging
 import warnings
 import numpy as np
-from sklearn import base, cross_validation
+from sklearn import base, cross_validation, model_selection
 try:
     import pandas as pd
 except:
@@ -65,21 +65,34 @@ def rplotwrap(func, dpi = 150, width=1024, height=896):
     """
 
     def dorplot(*args, **kwargs):
+        """Arguments:
+            file -- output file [default: tmp.png]
+            ...     --
+        """
+        if "file" in kwargs:
+            file = kwargs.pop("file")
+        else:
+            file = "tmp.png"
+        from rpy2.robjects.packages import importr
+        grdevices = importr('grDevices')
+        grdevices.png(file=file, width=width, height=height, res = dpi)
+        result = func(*args, **kwargs)
+        grdevices.dev_off()
+
         if run_from_ipython():
-            from rpy2.robjects.packages import importr
-            grdevices = importr('grDevices')
-            grdevices.png(file="tmp.png", width=width, height=height, res = dpi)
-            
-            result = func(*args, **kwargs)
-            
-            grdevices.dev_off()
             from IPython.display import Image, display
-            display(Image(filename='tmp.png'))
-        return result
+            display(Image(filename=file))
+            return result
     return dorplot
 #################################################################
+def is_basekfold(cv):
+    return isinstance(cv, cross_validation._BaseKFold ) or isinstance(cv, model_selection._split._BaseKFold)
+
+def assert_basekfold(cv):
+    assert is_basekfold(cv)
+
 def get_foldid(cv):
-    assert isinstance(cv, cross_validation._BaseKFold )
+    assert_basekfold(cv)
     foldid = np.empty(cv.n, dtype=np.int32)
     for nn, (_, tsi) in enumerate(cv):
         foldid[tsi] = nn
@@ -391,7 +404,7 @@ class glmnet(base.BaseEstimator):
         
         self.params = dict( [ (kk.replace("_","."), vv) for kk, vv in self.params.items() ] )
 
-        if isinstance(cv, cross_validation._BaseKFold):
+        if is_basekfold(cv):
             self.cv = cv
             self._foldid = get_foldid(cv)
             self.params["foldid"] = 1 + self._foldid
@@ -447,7 +460,7 @@ class glmnet(base.BaseEstimator):
             if type(value) in (int, float):
                 for nn in ("n_folds", "nfolds",):
                     self.__dict__[nn] = value
-            elif isinstance(value, cross_validation._BaseKFold):
+            elif is_basekfold(value):
                 for nn in ("n_folds", "nfolds",):
                     self.__dict__[nn] = value.n_folds
             
@@ -455,7 +468,7 @@ class glmnet(base.BaseEstimator):
             logging.debug("setting folds")
             for nn in ("n_folds", "nfolds",):
                 self.__dict__[nn] = value
-            if "cv" in self.__dict__ and isinstance(self.cv, cross_validation._BaseKFold):
+            if "cv" in self.__dict__ and is_basekfold(self.cv):
                 #raise ValueError("resetting cv to integer value\t%u" % value )
                 warnings.warn("resetting cv to integer value\t%u" % value)
             self.__dict__["cv"] = value
@@ -495,13 +508,13 @@ class glmnet(base.BaseEstimator):
         else:
             predict = robjects.r("glmnet::predict.glmnet")
         #logging.debug( repr(kwargs) )
-        self.y_predicted = np.array(predict(self.rmodel, rmatrix(X), **kwargs)) 
+        self.y_predicted = np.array(predict(self.rmodel, rmatrix(X), **kwargs))
         if (not hasattr(kwargs["s"], "__len__") or type(kwargs["s"]) is str ) and np.prod(self.y_predicted.shape) == X.shape[0]:
-            self.y_predicted = self.y_predicted.ravel()            
+            self.y_predicted = self.y_predicted.ravel()
         return self.y_predicted
     
     @rplotwrap
-    def rplot(self, **kwargs):
+    def rplot(self, file = None, **kwargs):
         rplot = robjects.r('plot')
         rplot(self.rmodel,  **kwargs)
         return
@@ -578,7 +591,8 @@ class glmnet(base.BaseEstimator):
     def cross_val_score(self, metric, best = True):
         "apply supplied `metric(y, y_predicted)` to cached predicted y values"
         if not self.keep:
-            raise ValueError("this method requires call with `keep=True` flag. No cached values found.")
+            raise ValueError("this method requires call with `keep=True` flag. " +\
+                             "No cached values found.")
         if best:
             valid = self.alphas_ == self.alpha_
         else:
