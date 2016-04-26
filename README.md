@@ -26,7 +26,7 @@ In this wrapper, the parameter names are chosen to disambiguate `R` and `sklearn
 
 ## Interfaces to scikit-learn
 
-- use standard `.fit()` and `.predict()` methods:
+- use standard `.fit()` and `.predict()` methods
 - cross-validation can be fed as `cv` parameter as well as `R` style `foldid` list
 - to get cross-validation metrics in cross-validation mode:
  + initialize with `keep=True` flag, e.g.: `model = glmnet(..., cv=5, keep=True)`

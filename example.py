@@ -3,6 +3,7 @@ from __future__ import print_function
 from rpyglmnet import glmnet
 
 print("simulating data")
+import numpy as np
 N = 20
 P = 30
 causal_ind = 4
