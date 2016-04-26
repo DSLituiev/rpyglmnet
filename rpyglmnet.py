@@ -334,7 +334,9 @@ class glmnet(base.BaseEstimator):
             if keep=TRUE, the fold assignments used
     """
 
-    def __init__(self, n_folds=0, nfolds=0, cv=0, which_coef="1se",  
+    def __init__(self, 
+                n_folds=0, nfolds=0, cv=0, foldid=None,
+                which_coef="1se",  
                 family=None,#c("gaussian","binomial","poisson","multinomial","cox","mgaussian"),
                 weights=None, offset=None, l1_ratio=1.0, nlambda = 100,
                 lambda_min_ratio = None, lambda_=None,
@@ -375,7 +377,7 @@ class glmnet(base.BaseEstimator):
         self.standardize = standardize
         self.standardize_response = standardize_response
         self.nlambda = nlambda
-        self.l1_ratio = l1_ratio       
+        self.l1_ratio = l1_ratio 
         #self.cv = cv
     
         self.family = family
@@ -407,13 +409,20 @@ class glmnet(base.BaseEstimator):
         if is_basekfold(cv):
             self.cv = cv
             self._foldid = get_foldid(cv)
-            self.params["foldid"] = 1 + self._foldid
-            self.params["nfolds"] = cv.n_folds
+            foldid = self._foldid
+            #self.params["nfolds"] = cv.n_folds
             #self.nfolds = cv.n_folds
         else:    
             self.nfolds = self.params["nfolds"]
         #self.n_folds = self.params["nfolds"]
         #self.cv = self.params["nfolds"]
+
+        self.foldid = np.array(foldid, dtype=int)
+        if self.foldid is not None:
+            self.foldid = self.foldid - min(self.foldid)
+            self.params["foldid"] = 1 + self.foldid
+            self.nfolds = np.unique(self.foldid).shape[0]
+            self.params["nfolds"] = self.nfolds 
 
         self.params["alpha"] = l1_ratio
 
@@ -626,14 +635,14 @@ class glmnet(base.BaseEstimator):
         self._fit_preval = self["fit.preval"][:,valid_alpha_inds]
         return self._fit_preval
     
-    @property
-    def foldid(self):
-        "fold id, zero-indexed"
-        if hasattr(self, "_foldid"):
-            return self._foldid
-        #logging.debug("getting fold id")
-        self._foldid = self.__getitem__( "foldid" ) - 1
-        return self._foldid
+  #  @property
+  #  def foldid(self):
+  #      "fold id, zero-indexed"
+  #      if hasattr(self, "_foldid"):
+  #          return self._foldid
+  #      #logging.debug("getting fold id")
+  #      self._foldid = self.__getitem__( "foldid" ) - 1
+  #      return self._foldid
 
     @property
     def alpha_(self):
