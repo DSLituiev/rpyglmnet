@@ -294,7 +294,7 @@ class glmnet(base.BaseEstimator):
             This makes more efficient use of risk sets.
             With `grouped=FALSE` the log partial likelihood is computed 
             only on the Kth fold
-        keep    
+        keep
             If keep=TRUE, a prevalidated array is returned containing fitted
             values for each observation and each value of lambda. 
             This means these fits are computed with this observation and 
@@ -308,35 +308,35 @@ class glmnet(base.BaseEstimator):
         Attributes [cross-validation]
         -----------------------------
 
-        lambda  
+        lambda
             the values of lambda used in the fits.
-        cvm 
+        cvm
             The mean cross-validated error - a vector of length length(lambda).
-        cvsd    
+        cvsd
             estimate of standard error of cvm.
-        cvup    
+        cvup
             upper curve = cvm+cvsd.
-        cvlo    
+        cvlo
             lower curve = cvm-cvsd.
-        nzero   
+        nzero
             number of non-zero coefficients at each lambda.
-        name    
+        name
             a text string indicating type of measure (for plotting purposes).
-        glmnet.fit  
+        glmnet.fit
             a fitted glmnet object for the full data.
-        lambda.min  
+        lambda.min
             value of lambda that gives minimum cvm.
-        lambda.1se  
+        lambda.1se
             largest value of lambda such that error is within 1 standard error of the minimum.
-        fit.preval  
+        fit.preval
             if keep=TRUE, this is the array of prevalidated fits. Some entries can be NA, if that and subsequent values of lambda are not reached for that fold
-        foldid  
+        foldid
             if keep=TRUE, the fold assignments used
     """
 
-    def __init__(self, 
+    def __init__(self,
                 n_folds=0, nfolds=0, cv=0, foldid=None,
-                which_coef="1se",  
+                which_coef="1se",
                 family=None,#c("gaussian","binomial","poisson","multinomial","cox","mgaussian"),
                 weights=None, offset=None, l1_ratio=1.0, nlambda = 100,
                 lambda_min_ratio = None, lambda_=None,
@@ -345,11 +345,11 @@ class glmnet(base.BaseEstimator):
                 #pmax = min(dfmax * 2+20, nvars), 
                 exclude=None,
                 penalty_factor = None, #rep(1, nvars),
-                lower_limits=-np.inf, 
+                lower_limits=-np.inf,
                 upper_limits=np.inf, maxit=100000,
                 #type_gaussian=ifelse(nvars<500,"covariance","naive"),
                 #type_logistic=c("Newton","modified.Newton"),
-                standardize_response=False, 
+                standardize_response=False,
                 #type.multinomial=c("ungrouped","grouped"),
                 keep = False,
                 ):
@@ -377,9 +377,9 @@ class glmnet(base.BaseEstimator):
         self.standardize = standardize
         self.standardize_response = standardize_response
         self.nlambda = nlambda
-        self.l1_ratio = l1_ratio 
+        self.l1_ratio = l1_ratio
         #self.cv = cv
-    
+
         self.family = family
         if family is not None:
             self.params["family"] = family
@@ -403,7 +403,7 @@ class glmnet(base.BaseEstimator):
         self.penalty_factor = penalty_factor
         if penalty_factor is not None:
             self.params["penalty_factor"] = penalty_factor
-        
+
         self.params = dict( [ (kk.replace("_","."), vv) for kk, vv in self.params.items() ] )
 
         if is_basekfold(cv):
@@ -412,12 +412,12 @@ class glmnet(base.BaseEstimator):
             foldid = self._foldid
             #self.params["nfolds"] = cv.n_folds
             #self.nfolds = cv.n_folds
-        else:    
+        else: 
             self.nfolds = self.params["nfolds"]
         #self.n_folds = self.params["nfolds"]
         #self.cv = self.params["nfolds"]
 
-        self.foldid = np.array(foldid, dtype=int)
+        self.foldid = np.array(foldid, dtype=int) if foldid is not None else None
         if self.foldid is not None:
             self.foldid = self.foldid - min(self.foldid)
             self.params["foldid"] = 1 + self.foldid
@@ -501,6 +501,9 @@ class glmnet(base.BaseEstimator):
 
         if ("nfolds" in self.params) and (self.params["nfolds"] != 0):
             self.y_predicted = self["fit.preval"][:,:-1]
+        if self.keep:
+            #self.foldid=self["foldid"]
+            self._foldid=self["foldid"]-1
         return self
     
     def predict(self, X, **kwargs):
@@ -584,7 +587,7 @@ class glmnet(base.BaseEstimator):
             ydiffsq = (self.fit_preval - self.y)**2
             self._mse_path_ = np.empty((ydiffsq.shape[1], self.nfolds))
             for nn in range(self.nfolds):
-                self._mse_path_[:,nn] = ydiffsq[self.foldid==nn].mean(0)
+                self._mse_path_[:,nn] = ydiffsq[self._foldid==nn].mean(0)
             return  self._mse_path_
 
         logging.warn("well, this might be something strange; call it better on a CV object!")
@@ -609,8 +612,8 @@ class glmnet(base.BaseEstimator):
 
         metric_ = np.empty(self.nfolds)
         for nn in range(self.nfolds):
-            fold_y_hat = self.fit_preval.T[ valid, self.foldid==nn].ravel()
-            fold_y = self.y[self.foldid==nn].ravel()
+            fold_y_hat = self.fit_preval.T[ valid, self._foldid==nn].ravel()
+            fold_y = self.y[self._foldid==nn].ravel()
             metric_[nn] = metric(fold_y, fold_y_hat)
         return metric_
  
