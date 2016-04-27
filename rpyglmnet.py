@@ -412,17 +412,17 @@ class glmnet(base.BaseEstimator):
             foldid = self._foldid
             #self.params["nfolds"] = cv.n_folds
             #self.nfolds = cv.n_folds
-        else: 
+        else:
             self.nfolds = self.params["nfolds"]
         #self.n_folds = self.params["nfolds"]
         #self.cv = self.params["nfolds"]
 
+        self.foldid = np.array(foldid, dtype=int) if foldid is not None else None
         if self.foldid is not None:
-            self.foldid = np.array(foldid, dtype=int)
             self.foldid = self.foldid - min(self.foldid)
             self.params["foldid"] = 1 + self.foldid
             self.nfolds = np.unique(self.foldid).shape[0]
-            self.params["nfolds"] = self.nfolds 
+            self.params["nfolds"] = self.nfolds
 
         self.params["alpha"] = l1_ratio
 
@@ -501,6 +501,9 @@ class glmnet(base.BaseEstimator):
 
         if ("nfolds" in self.params) and (self.params["nfolds"] != 0):
             self.y_predicted = self["fit.preval"][:,:-1]
+        if self.keep:
+            #self.foldid=self["foldid"]
+            self._foldid=self["foldid"]-1
         return self
     
     def predict(self, X, **kwargs):
@@ -584,7 +587,7 @@ class glmnet(base.BaseEstimator):
             ydiffsq = (self.fit_preval - self.y)**2
             self._mse_path_ = np.empty((ydiffsq.shape[1], self.nfolds))
             for nn in range(self.nfolds):
-                self._mse_path_[:,nn] = ydiffsq[self.foldid==nn].mean(0)
+                self._mse_path_[:,nn] = ydiffsq[self._foldid==nn].mean(0)
             return  self._mse_path_
 
         logging.warn("well, this might be something strange; call it better on a CV object!")
@@ -609,8 +612,8 @@ class glmnet(base.BaseEstimator):
 
         metric_ = np.empty(self.nfolds)
         for nn in range(self.nfolds):
-            fold_y_hat = self.fit_preval.T[ valid, self.foldid==nn].ravel()
-            fold_y = self.y[self.foldid==nn].ravel()
+            fold_y_hat = self.fit_preval.T[ valid, self._foldid==nn].ravel()
+            fold_y = self.y[self._foldid==nn].ravel()
             metric_[nn] = metric(fold_y, fold_y_hat)
         return metric_
  
