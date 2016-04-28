@@ -351,6 +351,22 @@ class glmnet(base.BaseEstimator):
         foldid
             if keep=TRUE, the fold assignments used
     """
+    rpy_dict = { 'penalty.factor' : 'penalty_factor',
+                "alpha": "l1_ratio",
+                "lambda": "alpha_",
+                'standardize.response': 'standardize_response',
+                "intercept": "intercept",
+                "keep": "keep",
+                "standardize": "standardize",
+                "thresh": "thresh",
+                "weights" : "weights",
+                "maxit": "maxit",
+                "nfolds": "nfolds",
+                "nlambda": "nlambda",
+                "family": "family",
+                "foldid": "foldid",
+                }
+    pyr_dict = dict(zip(rpy_dict.values(), rpy_dict.keys()))
 
     def __init__(self,
                 n_folds=0, nfolds=0, cv=None, foldid=None,
@@ -390,13 +406,13 @@ class glmnet(base.BaseEstimator):
                 intercept = self.intercept,
                 thresh = thresh,
                 maxit = maxit,
-                standardize_response = standardize_response,
                 standardize = standardize,
                 nfolds= max(n_folds, nfolds, cv if type(cv) in (int,float) else 0) if lambda_ is None else 0,
-                penalty_factor = penalty_factor,
                 keep = keep,
                             )
                 #self.cv = cv
+        self.params["penalty.factor"] = penalty_factor
+        self.params["standardize.response"] = standardize_response
 
         self.family = family
         if family is not None:
@@ -509,9 +525,9 @@ class glmnet(base.BaseEstimator):
                 pass
             self.__dict__["cv"] = value
             return
-
-        if "params" in self.__dict__ and name in self.__dict__["params"]:
-            self.__dict__["params"][name] = value
+        if "params" in self.__dict__ and name in [self.rpy_dict[x] for x in self.__dict__["params"]]:
+            #print("=======================\nsetting attr %s" % name )
+            self.__dict__["params"][self.pyr_dict[name]] = value
             self.__dict__[name] = value
             return
         else:
