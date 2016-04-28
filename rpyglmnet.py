@@ -487,14 +487,17 @@ class glmnet(base.BaseEstimator):
             return
 
         if name in ("foldid",):
-            self._foldid = np.array(value, dtype=int) if value is not None else None
+            self._foldid = value
+            self.__dict__["foldid"] = self._foldid
+            return
+
+        elif name in ("_foldid",):
+            self.__dict__["_foldid"] = np.array(value, dtype=int) if value is not None else None
             if self._foldid is not None:
-                self._foldid = self._foldid - int(min(self._foldid))
+                self.__dict__["_foldid"] = self._foldid - int(min(self._foldid))
                 self.params["foldid"] = 1 + self._foldid
                 self.nfolds = np.unique(self._foldid).shape[0]
                 self.params["nfolds"] = self.nfolds
-            self.__dict__["foldid"] = self._foldid
-            return
 
         if name in  ("n_folds", "nfolds",):
             logging.debug("setting folds")
@@ -534,8 +537,7 @@ class glmnet(base.BaseEstimator):
             self.foldid = 1 + get_foldid(self.cv, y)
             self.params.pop("nfolds")
         if "foldid" in fit_params:
-            self.params["foldid"] = fit_params.pop("foldid")
-            self._foldid =  fit_params.pop("foldid")
+            self._foldid = np.asarray(fit_params.pop("foldid"), dtype=int)
             self._foldid = self._foldid - min(self._foldid)
             self.params["foldid"] = self._foldid + 1
         "call the R function"
