@@ -91,9 +91,16 @@ def is_basekfold(cv):
 def assert_basekfold(cv):
     assert is_basekfold(cv)
 
-def get_foldid(cv):
+def get_foldid(cv, y = None):
+    if type(cv) in (list, np.array):
+        return cv
     assert_basekfold(cv)
-    foldid = np.empty(cv.n, dtype=np.int32)
+    if isinstance(cv, model_selection._split._BaseKFold):
+        cv = cv.split(y)
+        n = len(y)
+    elif isinstance(cv, cross_validation._BaseKFold ):
+        n = cv.n
+    foldid = np.empty(n, dtype=np.int32)
     for nn, (_, tsi) in enumerate(cv):
         foldid[tsi] = nn
     return foldid
@@ -366,6 +373,7 @@ class glmnet(base.BaseEstimator):
                 maxit = maxit,
                 standardize_response = standardize_response,
                 standardize = standardize,
+                penalty_factor = penalty_factor,
                 keep = keep,
                             )
         self.keep = keep
@@ -373,7 +381,6 @@ class glmnet(base.BaseEstimator):
         self.maxit = maxit
         self.lower_limits = lower_limits
         self.upper_limits = upper_limits
-        self.penalty_factor = penalty_factor
         self.standardize = standardize
         self.standardize_response = standardize_response
         self.nlambda = nlambda
@@ -400,30 +407,17 @@ class glmnet(base.BaseEstimator):
         if lambda_min_ratio is not None:
             self.params["lambda_min_ratio"] = lambda_min_ratio
 
-        self.penalty_factor = penalty_factor
-        if penalty_factor is not None:
-            self.params["penalty_factor"] = penalty_factor
-
         self.params = dict( [ (kk.replace("_","."), vv) for kk, vv in self.params.items() ] )
 
-        if is_basekfold(cv):
+        "TODO : compatibility with model_selection"
+        if is_basekfold(cv) or type(cv) in (list, np.array):
             self.cv = cv
             self._foldid = get_foldid(cv)
             foldid = self._foldid
-            #self.params["nfolds"] = cv.n_folds
-            #self.nfolds = cv.n_folds
         else:
             self.nfolds = self.params["nfolds"]
-        #self.n_folds = self.params["nfolds"]
-        #self.cv = self.params["nfolds"]
 
-        self.foldid = np.array(foldid, dtype=int) if foldid is not None else None
-        if self.foldid is not None:
-            self.foldid = self.foldid - min(self.foldid)
-            self.params["foldid"] = 1 + self.foldid
-            self.nfolds = np.unique(self.foldid).shape[0]
-            self.params["nfolds"] = self.nfolds
-
+        self.foldid = foldid
         self.params["alpha"] = l1_ratio
 
         self.lambda_ = lambda_
@@ -470,18 +464,40 @@ class glmnet(base.BaseEstimator):
                 for nn in ("n_folds", "nfolds",):
                     self.__dict__[nn] = value
             elif is_basekfold(value):
+                if not hasattr(value, "n_folds"):
+                    setattr(self, "foldid", get_foldid(value))
+                    n_folds = len(np.unique(self.foldid))
+                else:
+                    n_folds = value.n_folds
+
                 for nn in ("n_folds", "nfolds",):
-                    self.__dict__[nn] = value.n_folds
-            
+                    setattr(self, nn, n_folds)
+            return
+
+        if name in ("foldid",):    
+            self._foldid = np.array(value, dtype=int) if value is not None else None
+            if self._foldid is not None:
+                self._foldid = self._foldid - int(min(self._foldid))
+                self.params["foldid"] = 1 + self._foldid
+                self.nfolds = np.unique(self._foldid).shape[0]
+                self.params["nfolds"] = self.nfolds
+            self.__dict__["foldid"] = self._foldid
+            return
+
         if name in  ("n_folds", "nfolds",):
             logging.debug("setting folds")
             for nn in ("n_folds", "nfolds",):
                 self.__dict__[nn] = value
-            if "cv" in self.__dict__ and is_basekfold(self.cv):
+            if "cv" in self.__dict__ and not is_basekfold(self.cv):
                 #raise ValueError("resetting cv to integer value\t%u" % value )
                 warnings.warn("resetting cv to integer value\t%u" % value)
             self.__dict__["cv"] = value
+            return
 
+        if "params" in self.__dict__ and name in self.__dict__["params"]:
+            self.__dict__["params"][name] = value
+            #self.__dict__[name] = value
+            return
         else:
             self.__dict__[name] = value
 
@@ -497,13 +513,15 @@ class glmnet(base.BaseEstimator):
         self.y = y if len(y.shape) == 2 else y.ravel().reshape(-1, 1)
         self.y_predicted = None
         logging.debug("running %s with parameters:\n%s" % ( self.fun, "\n".join(["%s\t%s" % (kk, repr(vv)) for kk, vv in self.params.items() ]) ))
+        self.params = dict(filter( lambda x: x[1] is not None, self.params.items()))
         self.rmodel = self._glmnet_(rmatrix(X), rmatrix(self.y), **self.params )
 
         if ("nfolds" in self.params) and (self.params["nfolds"] != 0):
             self.y_predicted = self["fit.preval"][:,:-1]
         if self.keep:
             #self.foldid=self["foldid"]
-            self._foldid=self["foldid"]-1
+            modeldict = dict(self.rmodel.items())
+            self._foldid = np.array(modeldict["foldid"])-1
         return self
     
     def predict(self, X, **kwargs):
@@ -610,6 +628,7 @@ class glmnet(base.BaseEstimator):
         else:
             valid = np.ones_like(self.alphas_, dtype = bool)
 
+        valid = valid[ : self.fit_preval.shape[1] ]
         metric_ = np.empty(self.nfolds)
         for nn in range(self.nfolds):
             fold_y_hat = self.fit_preval.T[ valid, self._foldid==nn].ravel()
@@ -641,8 +660,8 @@ class glmnet(base.BaseEstimator):
   #  @property
   #  def foldid(self):
   #      "fold id, zero-indexed"
-  #      if hasattr(self, "_foldid"):
-  #          return self._foldid
+        #if hasattr(self, "_foldid"):
+  #      return self.params["foldid"] - 1
   #      #logging.debug("getting fold id")
   #      self._foldid = self.__getitem__( "foldid" ) - 1
   #      return self._foldid
@@ -722,6 +741,8 @@ class glmnet(base.BaseEstimator):
         return self.__getitem__(attr)
 
     def  __getitem__(self, it):
+        if it in self.__dict__:
+            return self.__dict__[it]
         if "rmodel" not in self.__dict__:
             raise AttributeError("%r object has no attribute %r" %
                          (self.__class__, it))
@@ -729,6 +750,8 @@ class glmnet(base.BaseEstimator):
         modeldict = dict(self.rmodel.items())
         if it in modeldict:
             x = modeldict[it]
+        elif "params" in self.__dict__ and it in self.params:
+            return self.params[it]
         else:
             raise AttributeError("%r object has no attribute %r" %
                          (self.__class__, it))
