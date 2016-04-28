@@ -85,6 +85,17 @@ def rplotwrap(func, dpi = 150, width=1024, height=896):
             return result
     return dorplot
 #################################################################
+def cast_from_r(x):
+    if type(x) in (FloatVector, IntVector):
+        return np.array(x)
+    if type(x) is Matrix:
+        return np.array(x)
+    if type(x) is rpy2.robjects.methods.RS4:
+        try:
+            return np.array(rmatrix(x))
+        except:
+            return x
+
 def is_basekfold(cv):
     return isinstance(cv, cross_validation._BaseKFold ) or isinstance(cv, model_selection._split._BaseKFold)
 
@@ -342,7 +353,7 @@ class glmnet(base.BaseEstimator):
     """
 
     def __init__(self,
-                n_folds=0, nfolds=0, cv=0, foldid=None,
+                n_folds=0, nfolds=0, cv=None, foldid=None,
                 which_coef="1se",
                 family=None,#c("gaussian","binomial","poisson","multinomial","cox","mgaussian"),
                 weights=None, offset=None, l1_ratio=1.0, nlambda = 100,
@@ -365,7 +376,6 @@ class glmnet(base.BaseEstimator):
         self.fit_intercept = self.intercept
 
         self.params = dict(
-                nfolds= max(n_folds, nfolds, cv if type(cv) in (int,float) else 0) if lambda_ is None else 0,
                 alpha=l1_ratio,
                 nlambda=nlambda,
                 intercept = self.intercept,
@@ -373,6 +383,7 @@ class glmnet(base.BaseEstimator):
                 maxit = maxit,
                 standardize_response = standardize_response,
                 standardize = standardize,
+                nfolds= max(n_folds, nfolds, cv if type(cv) in (int,float) else 0) if lambda_ is None else 0,
                 penalty_factor = penalty_factor,
                 keep = keep,
                             )
@@ -410,14 +421,14 @@ class glmnet(base.BaseEstimator):
         self.params = dict( [ (kk.replace("_","."), vv) for kk, vv in self.params.items() ] )
 
         "TODO : compatibility with model_selection"
-        if is_basekfold(cv) or type(cv) in (list, np.array):
-            self.cv = cv
-            self._foldid = get_foldid(cv)
-            foldid = self._foldid
-        else:
-            self.nfolds = self.params["nfolds"]
-
+        self._cv = cv
+        if is_basekfold(cv):
+            self.params["nfolds"] = cv.n_folds
+        elif foldid is not None:
+            self.params["nfolds"] = len(np.unique(foldid))
+        self.nfolds = self.params["nfolds"]
         self.foldid = foldid
+
         self.params["alpha"] = l1_ratio
 
         self.lambda_ = lambda_
@@ -431,13 +442,14 @@ class glmnet(base.BaseEstimator):
             self.__dict__["nfolds"] = self.params["nfolds"]
         """ other options include "all" and  "best" """
         self.which_coef = which_coef
-        
+
         if family in ("binomial", "multinomial", "cox"):
             self._estimator_type = 'classifier'
         else:
             self._estimator_type = 'regressor'
 
-        if ("nfolds" in self.params) and (self.params["nfolds"] != 0):
+        if (("nfolds" in self.params) and (self.params["nfolds"] != 0)) or \
+                (self.cv is not None):
             self.params["keep"] = True
             self.fun = "glmnet::cv.glmnet"
             logging.debug("running %u fold cross-validation" % self.params["nfolds"] )
@@ -447,34 +459,34 @@ class glmnet(base.BaseEstimator):
             if "nfolds" in self.params:
                 self.params.pop("nfolds")
             self.fun = "glmnet::glmnet"
-        #print(self.fun)
         self._glmnet_ = robjects.r(self.fun, )
         #logging.debug("running %s with parameters:\n%s" % ( self.fun, "\n".join(["%s\t%s" % (kk, repr(vv)) for kk, vv in self.params.items() ]) ))
 
     def __repr__(self):
-        out = "glmnet[wrapped R function '%s'](\n" % self.fun 
+        out = "glmnet[wrapped R function '%s'](\n" % self.fun
         for kk, vv in self.params.items():
             out += "%s:\t%s\n" % (kk, vv)
         out += "\t)"
         return out
 
     def __setattr__(self, name, value):
-        if name in  ("cv"):
+        if name in ("cv"):
             if type(value) in (int, float):
+                if value<=1:
+                    raise ValueError("cv must be an int >=1 or a sklearn generator")
                 for nn in ("n_folds", "nfolds",):
                     self.__dict__[nn] = value
             elif is_basekfold(value):
+                setattr(self, "foldid", get_foldid(value, self.y))
                 if not hasattr(value, "n_folds"):
-                    setattr(self, "foldid", get_foldid(value))
                     n_folds = len(np.unique(self.foldid))
                 else:
                     n_folds = value.n_folds
-
                 for nn in ("n_folds", "nfolds",):
                     setattr(self, nn, n_folds)
             return
 
-        if name in ("foldid",):    
+        if name in ("foldid",):
             self._foldid = np.array(value, dtype=int) if value is not None else None
             if self._foldid is not None:
                 self._foldid = self._foldid - int(min(self._foldid))
@@ -490,7 +502,8 @@ class glmnet(base.BaseEstimator):
                 self.__dict__[nn] = value
             if "cv" in self.__dict__ and not is_basekfold(self.cv):
                 #raise ValueError("resetting cv to integer value\t%u" % value )
-                warnings.warn("resetting cv to integer value\t%u" % value)
+                #warnings.warn("resetting cv to integer value\t%u" % value)
+                pass
             self.__dict__["cv"] = value
             return
 
@@ -501,20 +514,36 @@ class glmnet(base.BaseEstimator):
         else:
             self.__dict__[name] = value
 
-    #@property
-    #def __doc__(self):
-    #    rhelp = robjects.r("help")
-    #    return str(rhelp(self.fun.split(":")[-1], package = "glmnet") )
-
     def fit(self, X, y,  l1_ratio = 1 , **fit_params):
         X = np.asarray(X)
         y = np.asarray(y)
         #logging.debug( repr(self.params) )
         self.y = y if len(y.shape) == 2 else y.ravel().reshape(-1, 1)
         self.y_predicted = None
+        self._fit_preval = None
         logging.debug("running %s with parameters:\n%s" % ( self.fun, "\n".join(["%s\t%s" % (kk, repr(vv)) for kk, vv in self.params.items() ]) ))
-        self.params = dict(filter( lambda x: x[1] is not None, self.params.items()))
-        self.rmodel = self._glmnet_(rmatrix(X), rmatrix(self.y), **self.params )
+        """parse fit parameters"""
+
+        if "penalty_factor" in fit_params:
+            self.params["penalty.factor"] = fit_params.pop("penalty_factor")
+        if "cv" in fit_params:
+            self.cv = fit_params.pop("cv")
+        else:
+            self.cv = self._cv
+        if self.cv is not None and is_basekfold(self.cv):
+            self.foldid = 1 + get_foldid(self.cv, y)
+            self.params.pop("nfolds")
+        if "foldid" in fit_params:
+            self.params["foldid"] = fit_params.pop("foldid")
+            self._foldid =  fit_params.pop("foldid")
+            self._foldid = self._foldid - min(self._foldid)
+            self.params["foldid"] = self._foldid + 1
+        "call the R function"
+        #self.params = dict(filter( lambda x: x[1] is not None, self.params.items()))
+        self.rmodel = self._glmnet_(
+                rmatrix(X), rmatrix(self.y),
+                **dict(filter( lambda x: x[1] is not None, self.params.items()))
+                )
 
         if ("nfolds" in self.params) and (self.params["nfolds"] != 0):
             self.y_predicted = self["fit.preval"][:,:-1]
@@ -523,7 +552,7 @@ class glmnet(base.BaseEstimator):
             modeldict = dict(self.rmodel.items())
             self._foldid = np.array(modeldict["foldid"])-1
         return self
-    
+
     def predict(self, X, **kwargs):
         if "alpha" in kwargs:
             kwargs["s"] = kwargs.pop("alpha")
@@ -542,13 +571,13 @@ class glmnet(base.BaseEstimator):
         if (not hasattr(kwargs["s"], "__len__") or type(kwargs["s"]) is str ) and np.prod(self.y_predicted.shape) == X.shape[0]:
             self.y_predicted = self.y_predicted.ravel()
         return self.y_predicted
-    
+
     @rplotwrap
     def rplot(self, file = None, **kwargs):
         rplot = robjects.r('plot')
         rplot(self.rmodel,  **kwargs)
         return
-    
+
     def plot(self, x = "l1_norm", y = "coef", agg = None):
         if (x.lower() == "l1_norm") or (x.lower() == "l1 norm"):
             x_ = self.l1_norm
@@ -571,17 +600,17 @@ class glmnet(base.BaseEstimator):
             ylab = "MSE"
         elif (y.lower() == "l1_norm") or (y.lower() == "l1 norm"):
             y_ = self.l1_norm
-            ylab = y 
+            ylab = y
         else:
             raise ValueError("unknown argument for the y-axis:", y)
-        
+
         if type(agg) is str:
             agg_ = lambda x: np.__dict__[agg](x, axis = 1)
 
         if agg is not None:
             y_ = agg_(y_)
 
-        try: 
+        try:
             plt.plot( x_,  y_)
         except ValueError as ee:
             print( "x:", np.array(x_).shape, file = sys.stderr )
@@ -590,7 +619,7 @@ class glmnet(base.BaseEstimator):
         plt.xlabel(x)
         plt.ylabel( ylab )
         return plt.gcf()
-    
+
     @property
     def fit_preval(self):
         y_chimeric = self["fit.preval"]
@@ -628,15 +657,17 @@ class glmnet(base.BaseEstimator):
         else:
             valid = np.ones_like(self.alphas_, dtype = bool)
 
-        valid = valid[ : self.fit_preval.shape[1] ]
+        #valid = valid[ : self.fit_preval.shape[1] ]
         metric_ = np.empty(self.nfolds)
+        #print("self.fit_preval", self.fit_preval.shape)
         for nn in range(self.nfolds):
+            #print(nn,)
             fold_y_hat = self.fit_preval.T[ valid, self._foldid==nn].ravel()
             fold_y = self.y[self._foldid==nn].ravel()
             metric_[nn] = metric(fold_y, fold_y_hat)
         return metric_
- 
-    
+
+
     @property
     def r2_path_(self):
         if hasattr(self, "_r2_path_"):
@@ -646,17 +677,17 @@ class glmnet(base.BaseEstimator):
             #mse_path[nn] = ydiffsq[self.foldid==nn].mean(0)
             y_var_fold[nn] = self.y[self.foldid==nn].var()
         self._r2_path_ = 1- (self.mse_path_ / y_var_fold)
-        return self._r2_path_ 
-    
+        return self._r2_path_
+
     @property
     def fit_preval(self):
         "cache to avoid frequent calls to R"
-        if hasattr(self, "_fit_preval"):
+        if hasattr(self, "_fit_preval") and self._fit_preval is not None:
             return self._fit_preval
         valid_alpha_inds = ~np.any(np.isnan(self["fit.preval"]), axis = 0)
         self._fit_preval = self["fit.preval"][:,valid_alpha_inds]
         return self._fit_preval
-    
+
   #  @property
   #  def foldid(self):
   #      "fold id, zero-indexed"
@@ -724,17 +755,17 @@ class glmnet(base.BaseEstimator):
     def nnz(self):
         """ Number of non-zero coefficients """
         return  (self.all_coef[:,1:] != 0).sum(1)
-    
+
     @property
     def alphas_(self):
         outd = dict(self.rmodel.items())
         #valid_alpha_inds = ~np.any(np.isnan(self["fit.preval"]), axis = 0)
         return np.array(outd["lambda"])#[valid_alpha_inds]
-    
+
     @property
     def l1_norm(self):
         return (abs(self.all_coef[:,1:])).sum(1)
-    
+
     def __getattr__(self, attr):
         if attr == "lambda_":
             attr == "lambda"
@@ -743,24 +774,14 @@ class glmnet(base.BaseEstimator):
     def  __getitem__(self, it):
         if it in self.__dict__:
             return self.__dict__[it]
-        if "rmodel" not in self.__dict__:
-            raise AttributeError("%r object has no attribute %r" %
+        elif "rmodel" in self.__dict__:
+            modeldict = dict(self.rmodel.items())
+            if it in modeldict:
+                x = modeldict[it]
+                return cast_from_r(x)
+            elif "params" in self.__dict__ and it in self.params:
+                return self.params[it]
+            else:
+                raise AttributeError("%r object has no attribute %r" %
                          (self.__class__, it))
-            #return
-        modeldict = dict(self.rmodel.items())
-        if it in modeldict:
-            x = modeldict[it]
-        elif "params" in self.__dict__ and it in self.params:
-            return self.params[it]
-        else:
-            raise AttributeError("%r object has no attribute %r" %
-                         (self.__class__, it))
-        if type(x) in (FloatVector, IntVector):
-            return np.array(x)
-        if type(x) is Matrix:
-            return np.array(x)
-        if type(x) is rpy2.robjects.methods.RS4:
-            try:
-                return np.array(rmatrix(x))
-            except:
-                return x    
+
