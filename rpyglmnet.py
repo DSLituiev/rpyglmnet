@@ -374,6 +374,15 @@ class glmnet(base.BaseEstimator):
 
         self.intercept = intercept and fit_intercept
         self.fit_intercept = self.intercept
+        self.keep = keep
+        self.thresh=thresh
+        self.maxit = maxit
+        self.lower_limits = lower_limits
+        self.upper_limits = upper_limits
+        self.standardize = standardize
+        self.standardize_response = standardize_response
+        self.nlambda = nlambda
+        self.l1_ratio = l1_ratio
 
         self.params = dict(
                 alpha=l1_ratio,
@@ -387,16 +396,7 @@ class glmnet(base.BaseEstimator):
                 penalty_factor = penalty_factor,
                 keep = keep,
                             )
-        self.keep = keep
-        self.thresh=thresh
-        self.maxit = maxit
-        self.lower_limits = lower_limits
-        self.upper_limits = upper_limits
-        self.standardize = standardize
-        self.standardize_response = standardize_response
-        self.nlambda = nlambda
-        self.l1_ratio = l1_ratio
-        #self.cv = cv
+                #self.cv = cv
 
         self.family = family
         if family is not None:
@@ -509,7 +509,7 @@ class glmnet(base.BaseEstimator):
 
         if "params" in self.__dict__ and name in self.__dict__["params"]:
             self.__dict__["params"][name] = value
-            #self.__dict__[name] = value
+            self.__dict__[name] = value
             return
         else:
             self.__dict__[name] = value
@@ -517,7 +517,7 @@ class glmnet(base.BaseEstimator):
     def fit(self, X, y,  l1_ratio = 1 , **fit_params):
         X = np.asarray(X)
         y = np.asarray(y)
-        #logging.debug( repr(self.params) )
+
         self.y = y if len(y.shape) == 2 else y.ravel().reshape(-1, 1)
         self.y_predicted = None
         self._fit_preval = None
@@ -539,11 +539,12 @@ class glmnet(base.BaseEstimator):
             self._foldid = self._foldid - min(self._foldid)
             self.params["foldid"] = self._foldid + 1
         "call the R function"
-        #self.params = dict(filter( lambda x: x[1] is not None, self.params.items()))
-        self.rmodel = self._glmnet_(
-                rmatrix(X), rmatrix(self.y),
-                **dict(filter( lambda x: x[1] is not None, self.params.items()))
-                )
+        self.params = dict(filter( lambda x: x[1] is not None, self.params.items()))
+        if "foldid" in self.params:
+            assert (len(self.params["foldid"]) == len(y.ravel())), "length of `y` must match the length of the `foldid`"
+        logging.debug("running %s with parameters:\n%s" % ( self.fun, "\n".join(["%s\t%s" % (kk, repr(vv)) for kk, vv in self.params.items() ]) ))
+        logging.debug( "X\t%s\ty\t%s" % (repr(X.shape), repr(y.shape)) )
+        self.rmodel = self._glmnet_(rmatrix(X), rmatrix(self.y), **self.params )
 
         if ("nfolds" in self.params) and (self.params["nfolds"] != 0):
             self.y_predicted = self["fit.preval"][:,:-1]
