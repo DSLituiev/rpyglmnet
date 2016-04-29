@@ -24,28 +24,34 @@ pandas2ri.activate()
 
 #####################################################################
 # R package names
-packnames = ('glmnet',)
-
 # import rpy2's package module
 import rpy2.robjects.packages as rpackages
 
-if all(rpackages.isinstalled(x) for x in packnames):
-    have_tutorial_packages = True
-else:
-    have_tutorial_packages = False
+def activate_r_packages(packnames):
+    if all(rpackages.isinstalled(x) for x in packnames):
+        have_tutorial_packages = True
+    else:
+        have_tutorial_packages = False
+        if not have_tutorial_packages:
+            # import R's utility package
+            utils = rpackages.importr('utils')
+            # select a mirror for R packages
+            utils.chooseCRANmirror(ind=1) # select the first mirror in the list
+    #We are now ready to install packages using R's own function install.package:
     if not have_tutorial_packages:
-        # import R's utility package
-        utils = rpackages.importr('utils')
-        # select a mirror for R packages
-        utils.chooseCRANmirror(ind=1) # select the first mirror in the list
-#We are now ready to install packages using R's own function install.package:
-if not have_tutorial_packages:
-    # R vector of strings
-    from rpy2.robjects.vectors import StrVector
-    # file
-    packnames_to_install = [x for x in packnames if not rpackages.isinstalled(x)]
-    if len(packnames_to_install) > 0:
-        utils.install_packages(StrVector(packnames_to_install))
+        # R vector of strings
+        from rpy2.robjects.vectors import StrVector
+        # file
+        packnames_to_install = [x for x in packnames if not rpackages.isinstalled(x)]
+        if len(packnames_to_install) > 0:
+            utils.install_packages(StrVector(packnames_to_install))
+
+packnames = ('glmnet', "devtools")
+#packnames = ('glmnet',)
+activate_r_packages(packnames)
+dev_mode = robjects.r("devtools::dev_mode")
+dev_mode()
+
 #####################################################################
 def run_from_ipython():
     try:
@@ -500,7 +506,6 @@ class glmnet(base.BaseEstimator):
                 self.params["nfolds"] = self.nfolds
 
         if name in  ("n_folds", "nfolds",):
-            logging.debug("setting folds")
             for nn in ("n_folds", "nfolds",):
                 self.__dict__[nn] = value
             if "cv" in self.__dict__ and not is_basekfold(self.cv):
@@ -524,7 +529,6 @@ class glmnet(base.BaseEstimator):
         self.y = y if len(y.shape) == 2 else y.ravel().reshape(-1, 1)
         self.y_predicted = None
         self._fit_preval = None
-        logging.debug("running %s with parameters:\n%s" % ( self.fun, "\n".join(["%s\t%s" % (kk, repr(vv)) for kk, vv in self.params.items() ]) ))
         """parse fit parameters"""
 
         if "penalty_factor" in fit_params:
@@ -544,8 +548,10 @@ class glmnet(base.BaseEstimator):
         self.params = dict(filter( lambda x: x[1] is not None, self.params.items()))
         if "foldid" in self.params:
             assert (len(self.params["foldid"]) == len(y.ravel())), "length of `y` must match the length of the `foldid`"
-        logging.debug("running %s with parameters:\n%s" % ( self.fun, "\n".join(["%s\t%s" % (kk, repr(vv)) for kk, vv in self.params.items() ]) ))
-        logging.debug( "X\t%s\ty\t%s" % (repr(X.shape), repr(y.shape)) )
+        logging.debug("running %s with parameters:\n%s" % ( self.fun,
+            "\n".join(["%s\t%s" % (kk, repr(vv.shape) if (type(vv) in (np.ndarray, np.array) and kk != "foldid") else repr(type(vv)) +": "+ repr(vv)) for kk, vv in self.params.items() ]) ))
+        #logging.debug("running %s with parameters:\n%s" % ( self.fun, "\n".join(["%s\t%s" % (kk, repr(vv)) for kk, vv in self.params.items() ]) ))
+        #logging.debug( "X\t%s\ty\t%s" % (repr(X.shape), repr(y.shape)) )
         self.rmodel = self._glmnet_(rmatrix(X), rmatrix(self.y), **self.params )
 
         if ("nfolds" in self.params) and (self.params["nfolds"] != 0):
@@ -566,9 +572,9 @@ class glmnet(base.BaseEstimator):
             kwargs["s"] = "lambda." + self.which_coef.replace("best", "min")
 
         if  ("nfolds" in self.params):
-            predict = robjects.r("glmnet::predict.cv.glmnet")
+            predict = robjects.r("glmnet:::predict.cv.glmnet")
         else:
-            predict = robjects.r("glmnet::predict.glmnet")
+            predict = robjects.r("glmnet:::predict.glmnet")
         #logging.debug( repr(kwargs) )
         self.y_predicted = np.array(predict(self.rmodel, rmatrix(X), **kwargs))
         if (not hasattr(kwargs["s"], "__len__") or type(kwargs["s"]) is str ) and np.prod(self.y_predicted.shape) == X.shape[0]:
@@ -713,7 +719,7 @@ class glmnet(base.BaseEstimator):
     @property
     def coef(self):
         if ("nfolds" in self.params):
-            coef = robjects.r('glmnet::coef.cv.glmnet')
+            coef = robjects.r('glmnet:::coef.cv.glmnet')
             logging.debug("`which_coef` set to %s" % self.which_coef )
             if self.which_coef == "all":
                 out = [ np.array(rmatrix(coef(self.rmodel, s = ss )))[:,0] for ss in self.alphas_ ]
@@ -727,7 +733,7 @@ class glmnet(base.BaseEstimator):
         else:
             logging.debug("no `nfolds` key in `params`; outputting all coefficients")
             #out =  np.array(rmatrix( coef(self.rmodel) ))
-            coef = robjects.r('glmnet::coef.glmnet')
+            coef = robjects.r('glmnet:::coef.glmnet')
             out = np.array(rmatrix( coef(self.rmodel )))#.ravel()
             return  out
 
@@ -747,10 +753,10 @@ class glmnet(base.BaseEstimator):
     @property
     def coef_(self):
         if ("nfolds" in self.params):
-            coef = robjects.r('glmnet::coef.cv.glmnet')
+            coef = robjects.r('glmnet:::coef.cv.glmnet')
             out = np.array(rmatrix( coef(self.rmodel, s = self["lambda.1se"][0] ))).ravel()[1:]
         else:
-            coef = robjects.r('glmnet::coef.glmnet')
+            coef = robjects.r('glmnet:::coef.glmnet')
             out = np.array(rmatrix( coef(self.rmodel )))[1:].ravel()
         return out
 
