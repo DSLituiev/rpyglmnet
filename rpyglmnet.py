@@ -371,6 +371,7 @@ class glmnet(base.BaseEstimator):
                 "nlambda": "nlambda",
                 "family": "family",
                 "foldid": "foldid",
+                "nlambda": "nlambda",
                 }
     pyr_dict = dict(zip(rpy_dict.values(), rpy_dict.keys()))
 
@@ -531,7 +532,6 @@ class glmnet(base.BaseEstimator):
             self.__dict__["cv"] = value
             return
         if "params" in self.__dict__ and name in [self.rpy_dict[x] for x in self.__dict__["params"]]:
-            #print("=======================\nsetting attr %s" % name )
             self.__dict__["params"][self.pyr_dict[name]] = value
             self.__dict__[name] = value
             return
