@@ -47,10 +47,10 @@ def activate_r_packages(packnames):
             utils.install_packages(StrVector(packnames_to_install))
 
 packnames = ('glmnet', "devtools")
-#packnames = ('glmnet',)
+packnames = ('glmnet',)
 activate_r_packages(packnames)
-dev_mode = robjects.r("devtools::dev_mode")
-dev_mode()
+#dev_mode = robjects.r("devtools::dev_mode")
+#dev_mode()
 
 #####################################################################
 def run_from_ipython():
@@ -672,8 +672,8 @@ class glmnet(base.BaseEstimator):
             self._mse_path_ = self._mse_path_.mean(0)
         return  self._mse_path_
 
-    def cross_val_score(self, metric, best = True):
-        "apply supplied `metric(y, y_predicted)` to cached predicted y values"
+    def cross_val_score(self, scoring, best = True):
+        "apply supplied `scoring(y, y_predicted)` to cached predicted y values"
         if not self.keep:
             raise ValueError("this method requires call with `keep=True` flag. " +\
                              "No cached values found.")
@@ -683,14 +683,12 @@ class glmnet(base.BaseEstimator):
             valid = np.ones_like(self.alphas_, dtype = bool)
 
         #valid = valid[ : self.fit_preval.shape[1] ]
-        metric_ = np.empty(self.nfolds)
-        #print("self.fit_preval", self.fit_preval.shape)
+        scoring_ = np.empty(self.nfolds)
         for nn in range(self.nfolds):
-            #print(nn,)
             fold_y_hat = self.fit_preval.T[ valid, self._foldid==nn].ravel()
             fold_y = self.y[self._foldid==nn].ravel()
-            metric_[nn] = metric(fold_y, fold_y_hat)
-        return metric_
+            scoring_[nn] = scoring(fold_y, fold_y_hat)
+        return scoring_
 
 
     @property
