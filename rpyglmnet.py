@@ -1,8 +1,19 @@
+# -*- coding: utf-8 -*-
+from __future__ import print_function, division
 import sys
+"use for R named lists"
+#from collections import namedtuple
 import logging
 import warnings
 import numpy as np
-from sklearn import base, cross_validation, model_selection
+from sklearn import base, cross_validation
+
+try:
+    from sklearn import model_selection
+except:
+    model_selection = None
+    pass
+
 try:
     import pandas as pd
 except:
@@ -103,7 +114,8 @@ def cast_from_r(x):
             return x
 
 def is_basekfold(cv):
-    return isinstance(cv, cross_validation._BaseKFold ) or isinstance(cv, model_selection._split._BaseKFold)
+    return isinstance(cv, cross_validation._BaseKFold ) or \
+                (model_selection is not None and isinstance(cv, model_selection._split._BaseKFold))
 
 def assert_basekfold(cv):
     assert is_basekfold(cv)
@@ -112,7 +124,7 @@ def get_foldid(cv, y = None):
     if type(cv) in (list, np.array):
         return cv
     assert_basekfold(cv)
-    if isinstance(cv, model_selection._split._BaseKFold):
+    if model_selection is not None and isinstance(cv, model_selection._split._BaseKFold):
         cv = cv.split(y)
         n = len(y)
     elif isinstance(cv, cross_validation._BaseKFold ):
@@ -129,7 +141,7 @@ class ArgumentNotSetError(ValueError):
     pass
 
 class glmnet(base.BaseEstimator):
-    """Fit a generalized linear model via penalized maximum likelihood.
+    u"""Fit a generalized linear model via penalized maximum likelihood.
     The regularization path is computed for the lasso or elasticnet
     penalty at a grid of values for the regularization parameter lambda. 
     Can deal with all shapes of data, including very large 
@@ -139,7 +151,7 @@ class glmnet(base.BaseEstimator):
     Usage
     -----
 
-        glmnet(x, y, 
+        glmnet(x, y,
             family=["gaussian","binomial","poisson","multinomial","cox","mgaussian"],
             weights, offset=NULL, l1_ratio = 1, nlambda = 100,
             lambda_min_ratio = ifelse(nobs<nvars,0.01,0.0001), 
@@ -157,20 +169,24 @@ class glmnet(base.BaseEstimator):
     ----------
 
         x       
-            input matrix, of dimension nobs x nvars; each row is an observation vector. 
-            Can be in sparse matrix format (inherit from class "sparseMatrix" as in 
-            package Matrix; not yet available for family="cox")
+            input matrix, of dimension nobs x nvars; each row is an observation
+            vector. Can be in sparse matrix format (inherit from class
+            "sparseMatrix" as in package Matrix; not yet available for
+            `family="cox"`)
         y   
-            response variable. Quantitative for family="gaussian", or family="poisson"
-            (non-negative counts). For family="binomial" should be either a factor 
-            with two levels, or a two-column matrix of counts or proportions (the second
-            column is treated as the target class; for a factor, the last level in 
-            alphabetical order is the target class). For family="multinomial",
+            response variable. Quantitative for family="gaussian", or
+            family="poisson" (non-negative counts). For family="binomial"
+            should be either a factor with two levels, or a two-column matrix
+            of counts or proportions (the second column is treated as the
+            target class; for a factor, the last level in alphabetical order
+            is the target class). For family="multinomial",
             can be a nc>=2 level factor, or a matrix with nc columns of counts
-            or proportions. For either "binomial" or "multinomial", if y is presented 
-            as a vector, it will be coerced into a factor. For family="cox", y should 
-            be a two-column matrix with columns named 'time' and 'status'. The latter is a
-            binary variable, with '1' indicating death, and '0' indicating right censored. 
+            or proportions. For either "binomial" or "multinomial", if `y` is 
+            presented as a vector, it will be coerced into a factor. 
+            For `family="cox"`, `y` should be a two-column mat
+            rix with columns named 'time' and 'status'. The latter is a
+            binary variable, with '1' indicating death, and '0' indicating
+            right censored. 
             The function Surv() in package survival produces such a matrix. 
             For family="mgaussian", y is a matrix of quantitative responses.
 
@@ -178,18 +194,20 @@ class glmnet(base.BaseEstimator):
             Response type (see above)
 
         weights 
-            observation weights. Can be total counts if responses are proportion matrices. 
-            Default is 1 for each observation
+            observation weights. Can be total counts if responses are 
+            proportion matrices. Default is 1 for each observation
 
         offset  
             A vector of length nobs that is included in the linear predictor 
             (a nobs x nc matrix for the "multinomial" family). 
             Useful for the "poisson" family (e.g. log of exposure time),
-            or for refining a model by starting at a current fit. Default is NULL. 
-            If supplied, then values must also be supplied to the predict function.
+            or for refining a model by starting at a current fit. 
+            Default is NULL. If supplied, then values must also be 
+            supplied to the predict function.
 
         l1_ratio    
-            The elasticnet mixing parameter, with 0≤α≤ 1. The penalty is defined as
+            The elasticnet mixing parameter, with 0≤α≤ 1.
+            The penalty is defined as
                     (1-α)/2||β||_2^2+α||β||_1.
             alpha=1 is the lasso penalty, and alpha=0 the ridge penalty.
 
@@ -207,16 +225,17 @@ class glmnet(base.BaseEstimator):
             A very small value of lambda.min.ratio will lead 
             to a saturated fit in the nobs < nvars case. 
             This is undefined for "binomial" and "multinomial" models,
-            and glmnet will exit gracefully when the percentage d
-            eviance explained is almost 1.
+            and glmnet will exit gracefully when the percentage
+            deviance explained is almost 1.
 
         lambda_
             A user supplied lambda sequence. Typical usage is to have the program 
             compute its own lambda sequence based on nlambda and lambda.min.ratio. 
             Supplying a value of lambda overrides this. WARNING: use with care. 
-            Do not supply a single value for lambda (for predictions after CV use 
-            predict() instead). Supply instead a decreasing sequence of lambda values.
-            glmnet relies on its warms starts for speed, and its often faster to fit 
+            Do not supply a single value for lambda (for predictions after CV 
+            use predict() instead). Supply instead a decreasing sequence of 
+            lambda values. `glmnet` relies on its warms starts for speed, 
+            and its often faster to fit 
             a whole path than compute a single fit.
 
         standardize 
@@ -414,7 +433,8 @@ class glmnet(base.BaseEstimator):
                 thresh = thresh,
                 maxit = maxit,
                 standardize = standardize,
-                nfolds= max(n_folds, nfolds, cv if type(cv) in (int,float) else 0) if lambda_ is None else 0,
+                nfolds= max(n_folds, nfolds, cv if type(cv) in (int,float) else 0) \
+                             if lambda_ is None else 0,
                 keep = keep,
                             )
                 #self.cv = cv
@@ -441,7 +461,8 @@ class glmnet(base.BaseEstimator):
         if lambda_min_ratio is not None:
             self.params["lambda_min_ratio"] = lambda_min_ratio
 
-        self.params = dict( [ (kk.replace("_","."), vv) for kk, vv in self.params.items() ] )
+        self.params = dict( [ (kk.replace("_","."), vv) \
+                              for kk, vv in self.params.items() ] )
 
         "TODO : compatibility with model_selection"
         self._cv = cv
@@ -488,8 +509,13 @@ class glmnet(base.BaseEstimator):
     def __repr__(self):
         out = "glmnet[wrapped R function '%s'](\n" % self.fun
         for kk, vv in self.params.items():
-            out += "%s:\t%s\n" % (kk, vv)
-        out += "\t)"
+            out += "%s:\t%s\n" % (\
+                 (kk, "len=%u" % len(vv)) \
+                   if (hasattr(vv,"__len__") and len(vv)>5) else (kk, repr(vv)) 
+                                 )
+                 #((kk), repr(vv) )
+                #    if (hasattr(vv,"__len__") and len(vv)>5) else kk, repr(vv) )
+        out += "  )"
         return out
 
     def __setattr__(self, name, value):
@@ -535,6 +561,12 @@ class glmnet(base.BaseEstimator):
             self.__dict__["params"][self.pyr_dict[name]] = value
             self.__dict__[name] = value
             return
+        if name in  ("lambda_",):
+            #if value is not None:
+            #    raise KeyError("setting LAMBDA: %s" % repr(value))
+            logging.debug("setting LAMBDA: %s" % repr(value) )
+            self.params["lambda"] = value
+            self.__dict__[name] = value
         else:
             self.__dict__[name] = value
 
@@ -565,7 +597,7 @@ class glmnet(base.BaseEstimator):
         if "foldid" in self.params:
             assert (len(self.params["foldid"]) == len(y.ravel())), "length of `y` must match the length of the `foldid`"
         logging.debug("running %s with parameters:\n%s" % ( self.fun,
-            "\n".join(["%s\t%s" % (kk, repr(vv.shape) if (type(vv) in (np.ndarray, np.array) and kk != "foldid") else repr(type(vv)) +": "+ repr(vv)) for kk, vv in self.params.items() ]) ))
+            "\n".join(["%s\t%s" % (kk, repr(vv.shape) if (hasattr(vv, "shape") and kk != "foldid") else repr(type(vv)) +": "+ repr(vv)) for kk, vv in self.params.items() ]) ))
         #logging.debug("running %s with parameters:\n%s" % ( self.fun, "\n".join(["%s\t%s" % (kk, repr(vv)) for kk, vv in self.params.items() ]) ))
         #logging.debug( "X\t%s\ty\t%s" % (repr(X.shape), repr(y.shape)) )
         self.rmodel = self._glmnet_(rmatrix(X), rmatrix(self.y), **self.params )
@@ -766,6 +798,7 @@ class glmnet(base.BaseEstimator):
 
     @property
     def coef_(self):
+        """coefficients excluding the intercept (sklearn style)"""
         if ("nfolds" in self.params):
             coef = robjects.r('glmnet:::coef.cv.glmnet')
             out = np.array(rmatrix( coef(self.rmodel, s = self["lambda.1se"][0] ))).ravel()[1:]
