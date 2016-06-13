@@ -6,7 +6,9 @@ import sys
 import logging
 import warnings
 import numpy as np
-from sklearn import base, cross_validation
+from sklearn import base
+from sklearn import cross_validation
+from sklearn import metrics
 
 try:
     from sklearn import model_selection
@@ -143,9 +145,9 @@ class ArgumentNotSetError(ValueError):
 class glmnet(base.BaseEstimator):
     u"""Fit a generalized linear model via penalized maximum likelihood.
     The regularization path is computed for the lasso or elasticnet
-    penalty at a grid of values for the regularization parameter lambda. 
-    Can deal with all shapes of data, including very large 
-    sparse data matrices. Fits linear, logistic and multinomial, 
+    penalty at a grid of values for the regularization parameter lambda.
+    Can deal with all shapes of data, including very large
+    sparse data matrices. Fits linear, logistic and multinomial,
     poisson, and Cox regression models.
 
     Usage
@@ -154,7 +156,7 @@ class glmnet(base.BaseEstimator):
         glmnet(x, y,
             family=["gaussian","binomial","poisson","multinomial","cox","mgaussian"],
             weights, offset=NULL, l1_ratio = 1, nlambda = 100,
-            lambda_min_ratio = ifelse(nobs<nvars,0.01,0.0001), 
+            lambda_min_ratio = ifelse(nobs<nvars,0.01,0.0001),
             lambda_=NULL,
             standardize = TRUE, intercept=TRUE, thresh = 1e-07,  dfmax = nvars + 1,
             pmax = min(dfmax * 2+20, nvars),
@@ -162,18 +164,18 @@ class glmnet(base.BaseEstimator):
             lower_limits=-Inf, upper_limits=Inf, maxit=100000,
             type_gaussian=ifelse(nvars<500,"covariance","naive"),
             type_logistic=c("Newton","modified.Newton"),
-            standardize_response=FALSE, 
+            standardize_response=FALSE,
             type_multinomial=c("ungrouped","grouped"))
 
     Arguments
     ----------
 
-        x       
+        x
             input matrix, of dimension nobs x nvars; each row is an observation
             vector. Can be in sparse matrix format (inherit from class
             "sparseMatrix" as in package Matrix; not yet available for
             `family="cox"`)
-        y   
+        y
             response variable. Quantitative for family="gaussian", or
             family="poisson" (non-negative counts). For family="binomial"
             should be either a factor with two levels, or a two-column matrix
@@ -181,83 +183,84 @@ class glmnet(base.BaseEstimator):
             target class; for a factor, the last level in alphabetical order
             is the target class). For family="multinomial",
             can be a nc>=2 level factor, or a matrix with nc columns of counts
-            or proportions. For either "binomial" or "multinomial", if `y` is 
-            presented as a vector, it will be coerced into a factor. 
+            or proportions. For either "binomial" or "multinomial", if `y` is
+            presented as a vector, it will be coerced into a factor.
             For `family="cox"`, `y` should be a two-column mat
             rix with columns named 'time' and 'status'. The latter is a
             binary variable, with '1' indicating death, and '0' indicating
-            right censored. 
-            The function Surv() in package survival produces such a matrix. 
+            right censored.
+            The function Surv() in package survival produces such a matrix.
             For family="mgaussian", y is a matrix of quantitative responses.
 
-        family  
+        family
             Response type (see above)
 
-        weights 
-            observation weights. Can be total counts if responses are 
+        weights
+            observation weights. Can be total counts if responses are
             proportion matrices. Default is 1 for each observation
 
-        offset  
-            A vector of length nobs that is included in the linear predictor 
-            (a nobs x nc matrix for the "multinomial" family). 
+        offset
+            A vector of length nobs that is included in the linear predictor
+            (a nobs x nc matrix for the "multinomial" family).
             Useful for the "poisson" family (e.g. log of exposure time),
-            or for refining a model by starting at a current fit. 
-            Default is NULL. If supplied, then values must also be 
+            or for refining a model by starting at a current fit.
+            Default is NULL. If supplied, then values must also be
             supplied to the predict function.
 
-        l1_ratio    
+        l1_ratio
             The elasticnet mixing parameter, with 0≤α≤ 1.
             The penalty is defined as
                     (1-α)/2||β||_2^2+α||β||_1.
             alpha=1 is the lasso penalty, and alpha=0 the ridge penalty.
 
-        nlambda 
+        nlambda
             The number of lambda values - default is 100.
 
-        lambda.min.ratio    
-            Smallest value for lambda, as a fraction of `lambda_max`, 
-            the (data derived) entry value (i.e. the smallest value 
-            for which all coefficients are zero). 
-            The default depends on the sample size `nobs` 
-            relative to the number of variables nvars. 
+        lambda.min.ratio
+            Smallest value for lambda, as a fraction of `lambda_max`,
+            the (data derived) entry value (i.e. the smallest value
+            for which all coefficients are zero).
+            The default depends on the sample size `nobs`
+            relative to the number of variables nvars.
             If `nobs > nvars`, the default is 0.0001, close to zero.
-            If `nobs < nvars`, the default is 0.01. 
-            A very small value of lambda.min.ratio will lead 
-            to a saturated fit in the nobs < nvars case. 
+            If `nobs < nvars`, the default is 0.01.
+            A very small value of lambda.min.ratio will lead
+            to a saturated fit in the nobs < nvars case.
             This is undefined for "binomial" and "multinomial" models,
             and glmnet will exit gracefully when the percentage
             deviance explained is almost 1.
 
         lambda_
-            A user supplied lambda sequence. Typical usage is to have the program 
-            compute its own lambda sequence based on nlambda and lambda.min.ratio. 
-            Supplying a value of lambda overrides this. WARNING: use with care. 
-            Do not supply a single value for lambda (for predictions after CV 
-            use predict() instead). Supply instead a decreasing sequence of 
-            lambda values. `glmnet` relies on its warms starts for speed, 
-            and its often faster to fit 
+            A user supplied lambda sequence. Typical usage is to have the program
+            compute its own lambda sequence based on nlambda and lambda.min.ratio.
+            Supplying a value of lambda overrides this. WARNING: use with care.
+            Do not supply a single value for lambda (for predictions after CV
+            use predict() instead). Supply instead a decreasing sequence of
+            lambda values. `glmnet` relies on its warms starts for speed,
+            and its often faster to fit
             a whole path than compute a single fit.
 
-        standardize 
-            Logical flag for x variable standardization, prior to fitting 
-            the model sequence. The coefficients are always returned 
-            on the original scale. Default is standardize=TRUE. 
-            If variables are in the same units already, 
-            you might not wish to standardize. See details below for 
+        standardize
+            Logical flag for x variable standardization, prior to fitting
+            the model sequence. The coefficients are always returned
+            on the original scale. Default is standardize=TRUE.
+            If variables are in the same units already,
+            you might not wish to standardize. See details below for
             y standardization with family="gaussian".
 
         intercept OR fit_intercept
             Should intercept(s) be fitted (default=True) or set to zero (FALSE)
-        thresh  
+
+        thresh
             Convergence threshold for coordinate descent.
-            Each inner coordinate-descent loop continues 
+            Each inner coordinate-descent loop continues
             until the maximum change in the objective
-            after any coefficient update is less than 
+            after any coefficient update is less than
             `thresh` times the null deviance. Defaults value is 1e-7.
-        dfmax   
+        dfmax
             Limit the maximum number of variables in the model. 
             Useful for very large nvars, if a partial path is desired.
-        pmax    
+        pmax
             Limit the maximum number of variables ever to be nonzero
         exclude 
             Indices of variables to be excluded from the model. 
@@ -271,17 +274,17 @@ class glmnet(base.BaseEstimator):
             (and implicitly infinity for variables listed in exclude). 
             Note: the penalty factors are internally rescaled 
             to sum to `nvars`, and the lambda sequence will reflect this change.
-        lower.limits    
+        lower.limits
             Vector of lower limits for each coefficient; default -Inf. 
             Each of these must be non-positive. Can be presented
             as a single value (which will then be replicated), 
             else a vector of length nvars
-        upper.limits    
+        upper.limits
             Vector of upper limits for each coefficient; default Inf. See lower.limits
-        maxit   
+        maxit
             Maximum number of passes over the data for all lambda values; default is 10^5.
-        type_gaussian   
-            Two algorithm types are supported 
+        type_gaussian
+            Two algorithm types are supported
             for (only) family="gaussian". The default when nvar<500 
             is type_gaussian="covariance", and saves all
             inner-products ever computed. This can be much faster 
@@ -414,6 +417,8 @@ class glmnet(base.BaseEstimator):
                 keep = False,
                 ):
 
+       # print("pyr_dict", self.pyr_dict)
+       # print("rpy_dict", self.rpy_dict)
         self.intercept = intercept and fit_intercept
         self.fit_intercept = self.intercept
         self.keep = keep
@@ -581,6 +586,7 @@ class glmnet(base.BaseEstimator):
 
         if "penalty_factor" in fit_params:
             self.params["penalty.factor"] = fit_params.pop("penalty_factor")
+        assert (self.params["penalty.factor"] is None or (len(self.params["penalty.factor"]) == X.shape[0]) )
         if "cv" in fit_params:
             self.cv = fit_params.pop("cv")
         else:
@@ -704,7 +710,25 @@ class glmnet(base.BaseEstimator):
             self._mse_path_ = self._mse_path_.mean(0)
         return  self._mse_path_
 
-    def cross_val_score(self, scoring, best = True):
+    def cross_val_score(self, X=None, y=None, scoring=metrics.r2_score, repeats=1, best=True):
+        assert repeats >= 1, "at least 1 repeat, please!"
+        """compute cross validation score by fitting the model anew
+        allows for reshuffling (`repeats`)"""
+        if X is None or y is None:
+            return self._cross_val_score(best=best)
+        if repr(type(X)) == "<class 'function'>":
+            scoring=X
+            return self._cross_val_score(scoring=scoring, best=best)
+
+        self.keep = True
+        score_list = []
+        for rr in range(repeats):
+            kf = model_selection.KFold(n_folds=self.n_folds, shuffle=True, random_state=rr)
+            self.fit(X,y, cv=kf)
+            score_list.append( self.cross_val_score(scoring) )
+        return np.hstack(score_list)
+
+    def _cross_val_score(self, scoring=metrics.r2_score, best = True):
         "apply supplied `scoring(y, y_predicted)` to cached predicted y values"
         if not self.keep:
             raise ValueError("this method requires call with `keep=True` flag. " +\
