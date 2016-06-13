@@ -5,7 +5,7 @@ import sys
 import logging
 import warnings
 import numpy as np
-from sklearn import base, cross_validation, model_selection
+from sklearn import base, cross_validation, model_selection, metrics
 try:
     import pandas as pd
 except:
@@ -398,6 +398,8 @@ class glmnet(base.BaseEstimator):
                 keep = False,
                 ):
 
+       # print("pyr_dict", self.pyr_dict)
+       # print("rpy_dict", self.rpy_dict)
         self.intercept = intercept and fit_intercept
         self.fit_intercept = self.intercept
         self.keep = keep
@@ -552,6 +554,7 @@ class glmnet(base.BaseEstimator):
 
         if "penalty_factor" in fit_params:
             self.params["penalty.factor"] = fit_params.pop("penalty_factor")
+        assert len(self.params["penalty.factor"]) == X.shape[0]
         if "cv" in fit_params:
             self.cv = fit_params.pop("cv")
         else:
@@ -675,7 +678,25 @@ class glmnet(base.BaseEstimator):
             self._mse_path_ = self._mse_path_.mean(0)
         return  self._mse_path_
 
-    def cross_val_score(self, scoring, best = True):
+    def cross_val_score(self, X=None, y=None, scoring=metrics.r2_score, repeats=1, best=True):
+        assert repeats >= 1, "at least 1 repeat, please!"
+        """compute cross validation score by fitting the model anew
+        allows for reshuffling (`repeats`)"""
+        if X is None or y is None:
+            return self._cross_val_score(best=best)
+        if repr(type(X)) == "<class 'function'>":
+            scoring=X
+            return self._cross_val_score(scoring=scoring, best=best)
+
+        self.keep = True
+        score_list = []
+        for rr in range(repeats):
+            kf = model_selection.KFold(n_folds=self.n_folds, shuffle=True, random_state=rr)
+            self.fit(X,y, cv=kf)
+            score_list.append( self.cross_val_score(scoring) )
+        return np.hstack(score_list)
+
+    def _cross_val_score(self, scoring=metrics.r2_score, best = True):
         "apply supplied `scoring(y, y_predicted)` to cached predicted y values"
         if not self.keep:
             raise ValueError("this method requires call with `keep=True` flag. " +\
