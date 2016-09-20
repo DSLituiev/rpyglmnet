@@ -18,11 +18,16 @@ print("Option 1: use native glmnet `nfolds`")
 model = glmnet(l1_ratio=0.5, n_folds=10)
 
 print("Option 2: use `sklearn` `cv` syntax")
-from sklearn.model_selection import KFold
-n_folds =10
-kf = KFold(n_folds)
 
-model = glmnet(l1_ratio=0.5, cv=kf.get_n_splits(y), keep=True)
+n_folds =10
+try:
+    from sklearn.model_selection import KFold
+    kf = KFold(n_folds)
+    model = glmnet(l1_ratio=0.5, cv=kf.get_n_splits(y), keep=True)
+except:
+    from sklearn.cross_validation import KFold
+    kf = KFold(len(y), n_folds)
+    model = glmnet(l1_ratio=0.5, cv=kf, keep=True)
 
 print("Fit in sklearn style")
 model.fit(X, y)
